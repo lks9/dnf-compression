@@ -12,7 +12,7 @@ function Disjunct:new(index, mask)
     local o = {}
     setmetatable(o, self)
 
-    o.bits = assert(index)
+    o.bits = index or 0
     o.mask = mask or 0
     return o
 end
@@ -28,13 +28,13 @@ function Disjunct:__tostring()
     local res = ""
     while true do
         if mask & 1 == 1 then
-            res = "*" .. res
-        else
             res = (rem & 1) .. res
+        else
+            res = "*" .. res
         end
         mask = mask >> 1
         rem = rem >> 1
-        if rem == 0 and mask == 0 then
+        if mask == 0 then
             return res
         end
         i = i + 1
@@ -49,13 +49,13 @@ function Disjunct:encode2()
     local res = 0
     while true do
         if mask & 1 == 1 then
-            res = res | (3^i) * 2
-        else
             res = res | (3^i) * (rem & 1)
+        else
+            res = res | (3^i) * 2
         end
         mask = mask >> 1
         rem = rem >> 1
-        if rem == 0 and mask == 0 then
+        if mask == 0 then
             return res
         end
         i = i + 1
@@ -69,13 +69,13 @@ function Disjunct:encode4()
     local res = 0
     while true do
         if mask & 1 == 1 then
-            res = res | (1<<(2*i)) * 2
-        else
             res = res | (1<<(2*i)) * (rem & 1)
+        else
+            res = res | (1<<(2*i)) * 2
         end
         mask = mask >> 1
         rem = rem >> 1
-        if rem == 0 and mask == 0 then
+        if mask == 0 then
             return res
         end
         i = i + 1
@@ -85,11 +85,11 @@ end
 function Disjunct:tolist()
     local i = 0
     -- needed since the following assumes bit 0 for mask bit 1
-    self.bits = self.bits & ~self.mask
+    self.bits = self.bits & self.mask
     local mask = self.mask
     local list = {self.bits}
     while not (mask == 0) do
-        if mask & 1 == 1 then
+        if mask & 1 == 0 then
             for k = 1, #list do
                 -- this keeps the list sorted
                 table.insert(list, list[k] | (1 << i))
@@ -104,14 +104,10 @@ end
 function Disjunct:addable(to_add)
     local diff
     if type(to_add) == "number" then
-        if self.mask == 0 then
-            diff = self.bits ~ to_add
-        else
-            return false
-        end
+        diff = (self.bits ~ to_add) & self.mask
     elseif getmetatable(to_add) == Disjunct then
         if self.mask == to_add.mask then
-            diff = (self.bits ~ to_add.bits) & ~self.mask
+            diff = (self.bits ~ to_add.bits) & self.mask
         else
             return false
         end
@@ -129,9 +125,9 @@ end
 -- gives incorrect result if not addable
 function Disjunct:add(to_add)
     if type(to_add) == "number" then
-        self.mask = self.mask | (self.bits ~ to_add)
+        self.mask = self.mask & ~(self.bits ~ to_add)
     elseif getmetatable(to_add) == Disjunct then
-        self.mask = self.mask | (self.bits ~ to_add.bits)
+        self.mask = self.mask & ~(self.bits ~ to_add.bits)
     end
 end
 
@@ -146,7 +142,7 @@ function Disjunct:__bor(to_add)
         new:add(self)
         return new
     else
-        local dnf = DNF:new()
+        local dnf = DNF:dnf()
         dnf:dump_add(self)
         dnf:dump_add(to_add)
         return dnf
@@ -161,7 +157,7 @@ end
 -- same implementation for DNF and Disjunct
 DNF.__bor = Disjunct.__bor
 
-function DNF:new(disjs)
+function DNF:dnf(disjs)
     o = {}
     setmetatable(o, self)
 
@@ -169,17 +165,21 @@ function DNF:new(disjs)
     return o
 end
 
+function DNF:disjunct(bits, mask)
+    return Disjunct:new(bits, mask)
+end
+
 -- for convenience, the empty dnf
 -- should not be modified
 -- (although nothing bad happens to the current module if modified)
-DNF.empty = DNF:new()
+DNF.empty = DNF:dnf()
 
 function DNF:copy()
     local disjs = {}
     for i,v in ipairs(self.disjs) do
         disjs[i] = v:copy()
     end
-    return DNF:new(disjs)
+    return DNF:dnf(disjs)
 end
 
 function DNF:addable(to_add)
