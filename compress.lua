@@ -10,7 +10,17 @@ function compressres_meta:__tostring()
     return res
 end
 
-local function do_compress(str, i, j, prev_res)
+local function dnfs_for_sym(prev_res, sym)
+    local dnfs = {}
+    for _, res in ipairs(prev_res) do
+        if res[sym] then
+            table.insert(dnfs, res[sym])
+        end
+    end
+    return dnfs
+end
+
+local function do_compress(str, i, j, prev_res, perm)
     if i+1 == j then
         local sym = str:byte(i+1)
         return {
@@ -19,23 +29,66 @@ local function do_compress(str, i, j, prev_res)
     end
 
     local cur_bit = (j-i) >> 1
+    local cur_mask = j - i - 1
     local middle = i + cur_bit
-    local res1 = do_compress(str, i, middle, prev_res)
+    local res1 = do_compress(str, i, middle, prev_res, perm)
 
     if middle >= #str then
+        for sym, dnf in pairs(res1) do
+            --local dnfs_sym = dnfs_for_sym(prev_res, sym)
+            --dnf:nicer_bits(dnfs_sym, cur_bit -1, cur_bit)
+            dnf:clear_bits(cur_bit)
+        end
         return res1
     end
 
     table.insert(prev_res, res1)
-    local res2 = do_compress(str, middle, j, prev_res)
+    local res2 = do_compress(str, middle, j, prev_res, perm)
     table.remove(prev_res) -- removes res1
 
     -- add cur_bit to distinguish res1 and res2
+    local count1, count2 = 0, 0
+    for sym, dnf in pairs(res2) do
+        local dnfs_sym = dnfs_for_sym(prev_res, sym)
+        if res1[sym] then
+            -- do not count twice
+        else
+            dnf:set_bits(cur_bit)
+            count1 = count1 + dnf:mergecount(dnfs_sym, cur_mask)
+            dnf:clear_bits(cur_bit)
+            count2 = count2 + dnf:mergecount(dnfs_sym, cur_mask)
+        end
+    end
     for sym, dnf in pairs(res1) do
-        dnf:clear_bits(cur_bit)
+        local dnfs_sym = dnfs_for_sym(prev_res, sym)
+        if res2[sym] then
+            dnf2 = res2[sym]
+            dnf:clear_bits(cur_bit)
+            dnf2:set_bits(cur_bit)
+            count1 = count1 + (dnf | dnf2):mergecount(dnfs_sym, cur_mask)
+            dnf:set_bits(cur_bit)
+            dnf2:clear_bits(cur_bit)
+            count2 = count2 + (dnf | dnf2):mergecount(dnfs_sym, cur_mask)
+        else
+            dnf:clear_bits(cur_bit)
+            count1 = count1 + dnf:mergecount(dnfs_sym, cur_mask)
+            dnf:set_bits(cur_bit)
+            count2 = count2 + dnf:mergecount(dnfs_sym, cur_mask)
+        end
+    end
+    local perm_desicion = count2 <= count1
+    if perm_desicion then
+        table.insert(perm, 0)
+        for _,dnf in pairs(res1) do
+            dnf:clear_bits(cur_bit)
+        end
+    else
+        table.insert(perm, 1)
     end
     for sym, dnf in pairs(res2) do
-        dnf:set_bits(cur_bit)
+        if perm_desicion then
+            dnf:set_bits(cur_bit)
+        end
         if not res1[sym] then
             res1[sym] = dnf
         else
@@ -54,7 +107,8 @@ function compress(str)
 
     local i = 0
     local j = 1 << math.ceil(math.log(#str, 2))
-    local res = do_compress(str, i, j, {})
+    local perm = {}
+    local res = do_compress(str, i, j, {}, perm)
 
     setmetatable(res, compressres_meta)
 
@@ -65,9 +119,14 @@ function compress(str)
         res_count = res_count + #dnf.disjs
     end
     local bit_len_disj = math.log(3 ^ math.ceil(math.log(#str, 2)), 2)
-    local compr_bytecount = index_count + res_count * bit_len_disj / 8
+    local compr_bytecount = index_count + res_count * bit_len_disj / 8 + #perm / 8
     print(string.format(
-        "%d bytes compressable to roughly %.2f bytes (%d symbols; %d disjuncts a %.2f bits)\n",
-        #str, compr_bytecount, index_count, res_count, bit_len_disj))
+        "%d bytes compressable to roughly %.2f bytes\n",
+        #str, compr_bytecount
+        ))
+    print(string.format(
+        "(%d symbols; %d disjuncts a %.2f bits; %d bits for permutation)\n",
+        index_count, res_count, bit_len_disj, #perm
+        ))
     return res
 end

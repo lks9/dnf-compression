@@ -101,6 +101,52 @@ function Disjunct:tolist()
     return list
 end
 
+function Disjunct:mergeable(to_merge, only_mask)
+    local merge_bits
+    if type(to_merge) == "number" then
+        merge_bits = to_merge
+    elseif getmetatable(to_merge) == Disjunct then
+        if not (self.mask & only_mask == to_merge.mask & only_mask) then
+            -- not mergeable, not the same mask!
+            return false
+        end
+        merge_bits = to_merge.bits
+    else
+        for _,v in pairs(to_merge) do
+            if self:mergeable(v, only_mask) then
+                return true
+            end
+        end
+        return false
+    end
+    local diff = (self.bits ~ merge_bits) & self.mask & only_mask
+    return diff == 0
+end
+
+-- prepare for merge
+-- sets free bits to whatever
+-- returns true if successful
+function Disjunct:nicer_bits(to_merge, only_mask, free_bits)
+    if getmetatable(to_merge) == Disjunct then
+        local mergeable = self:mergeable(to_merge, only_mask)
+        if not mergeable then
+            return false
+        end
+        self.bits = self.bits & ~(~to_merge.bits & free_bits)
+        self.bits = self.bits |  ( to_merge.bits & free_bits)
+        self.mask = self.mask & ~(~to_merge.mask & free_bits)
+        self.mask = self.mask |  (~to_merge.mask & free_bits)
+        return true
+    else
+        for _,v in pairs(to_merge) do
+            if self:nicer_bits(v, only_mask, free_bits) then
+                return true
+            end
+        end
+        return false
+    end
+end
+
 function Disjunct:addable(to_add)
     local diff
     if type(to_add) == "number" then
@@ -294,6 +340,22 @@ function DNF:star_bits(bits)
     for _, disj in ipairs(self.disjs) do
         disj:star_bits(bits)
     end
+end
+
+function DNF:nicer_bits(list, only_mask, bits)
+    for _, disj in ipairs(self.disjs) do
+        disj:nicer_bits(list, only_mask, bits)
+    end
+end
+
+function DNF:mergecount(list, only_mask)
+    local count = 0
+    for _, disj in ipairs(self.disjs) do
+        if disj:mergeable(list, only_mask) then
+            count = count + 1
+        end
+    end
+    return count
 end
 
 -- end of module DNF
