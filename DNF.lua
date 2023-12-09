@@ -135,8 +135,14 @@ function Disjunct:nicer_bits(to_merge, only_mask, free_bits)
         self.bits = self.bits & ~(~to_merge.bits & free_bits)
         self.bits = self.bits |  ( to_merge.bits & free_bits)
         self.mask = self.mask & ~(~to_merge.mask & free_bits)
-        self.mask = self.mask |  (~to_merge.mask & free_bits)
+        self.mask = self.mask |  ( to_merge.mask & free_bits)
         return true
+        --if self.mask == to_merge.mask then
+        --    return true
+        --else
+        --    -- possibly there is another way to make it even nicer
+        --    return false
+        --end
     else
         for _,v in pairs(to_merge) do
             if self:nicer_bits(v, only_mask, free_bits) then
