@@ -51,7 +51,7 @@ function compress(str)
     end
     local compr_bytecount = index_count + res_count * math.log(3 ^ math.log(#str, 2), 2) / 8
     print(string.format(
-        "compressed %d bytes into %.2f bytes (%d symbols; %d disjuncts a %.2f bits)\n",
+        "%d bytes compressable into %.2f bytes (%d symbols; %d disjuncts a %.2f bits)\n",
         #str, compr_bytecount, res_count, index_count,
         math.log(3 ^ math.log(#str, 2), 2)))
     return res
