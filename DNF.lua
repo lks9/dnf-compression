@@ -149,6 +149,20 @@ function Disjunct:__bor(to_add)
     end
 end
 
+function Disjunct:set_bits(bits)
+    self.mask = self.mask | bits
+    self.bits = self.bits | bits
+end
+
+function Disjunct:clear_bits(bits)
+    self.mask = self.mask | bits
+    self.bits = self.bits & ~bits
+end
+
+function Disjunct:star_bits(bits)
+    self.mask = self.mask & ~bits
+end
+
 ---------------------
 -- code for DNFs
 ---------------------
@@ -228,8 +242,8 @@ function DNF:addcount(to_add)
         return 1
     elseif getmetatable(to_add) == DNF then
         local res = 0
-        for _,v in ipairs(to_add.disjs) do
-            res = res + self:addcount(v)
+        for _,disj in ipairs(to_add.disjs) do
+            res = res + self:addcount(disj)
         end
         return res
     else
@@ -239,8 +253,8 @@ end
 
 function DNF:tolist()
     local res = {}
-    for _,v in ipairs(self.disjs) do
-        for _,bits in ipairs(v:tolist()) do
+    for _,disj in ipairs(self.disjs) do
+        for _,bits in ipairs(disj:tolist()) do
             table.insert(res, bits)
         end
     end
@@ -253,7 +267,7 @@ function DNF:__tostring()
     local ss = {}
     local len = 0
     local res = ""
-    for _,disj in ipairs(self.disjs) do
+    for _, disj in ipairs(self.disjs) do
         local s = tostring(disj)
         len = math.max(len, #s)
         table.insert(ss, s)
@@ -264,4 +278,23 @@ function DNF:__tostring()
     return res
 end
 
+function DNF:set_bits(bits)
+    for _, disj in ipairs(self.disjs) do
+        disj:set_bits(bits)
+    end
+end
+
+function DNF:clear_bits(bits)
+    for _, disj in ipairs(self.disjs) do
+        disj:clear_bits(bits)
+    end
+end
+
+function DNF:star_bits(bits)
+    for _, disj in ipairs(self.disjs) do
+        disj:star_bits(bits)
+    end
+end
+
+-- end of module DNF
 return DNF

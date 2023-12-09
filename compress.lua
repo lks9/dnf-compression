@@ -10,47 +10,53 @@ function compressres_meta:__tostring()
     return res
 end
 
-local function do_compress(str, i, j, res, mask)
-    if not res then
-        res = {}
-        setmetatable(res, compressres_meta)
-    end
-    i = i or 0
-    if i >= #str then
-        return res
-    end
-    j = j or 1 << math.ceil(math.log(#str, 2))
+local function do_compress(str, i, j, prev_res)
     if i+1 == j then
         local sym = str:byte(i+1)
-        if not res[sym] then
-            res[sym] = DNF:dnf()
-        end
-        local disj = DNF:disjunct(i, mask)
-        res[sym]:add(disj)
-        return res
+        return {
+            [sym] = DNF:dnf { DNF:disjunct() }
+        }
     end
-    local res2 = {}
-    res2 = do_compress(str, i, i + ((j-i) >> 1), res2, mask)
-    res2 = do_compress(str, i + ((j-i) >> 1), j, res2, mask)
-    for sym,dnf in pairs(res2) do
-        if not res[sym] then
-            res[sym] = dnf
+
+    local cur_bit = (j-i) >> 1
+    local middle = i + cur_bit
+    local res1 = do_compress(str, i, middle, prev_res)
+
+    if middle >= #str then
+        return res1
+    end
+
+    table.insert(prev_res, res1)
+    local res2 = do_compress(str, middle, j, prev_res)
+    table.remove(prev_res) -- removes res1
+
+    -- add cur_bit to distinguish res1 and res2
+    for sym, dnf in pairs(res1) do
+        dnf:clear_bits(cur_bit)
+    end
+    for sym, dnf in pairs(res2) do
+        dnf:set_bits(cur_bit)
+        if not res1[sym] then
+            res1[sym] = dnf
         else
-            res[sym]:add(dnf)
+            res1[sym]:add(dnf)
         end
     end
-    return res
+    return res1
 end
 
 function compress(str)
-    local res = {}
-    setmetatable(res, compressres_meta)
-    if #str == 0 then return res end
+    if #str == 0 then
+        local res = {}
+        setmetatable(res, compressres_meta)
+        return res
+    end
 
     local i = 0
     local j = 1 << math.ceil(math.log(#str, 2))
-    local mask = j - 1
-    res = do_compress(str, i, j, res, mask)
+    local res = do_compress(str, i, j, {})
+
+    setmetatable(res, compressres_meta)
 
     local res_count = 0
     local index_count = 0
@@ -58,10 +64,10 @@ function compress(str)
         index_count = index_count + 1
         res_count = res_count + #dnf.disjs
     end
-    local compr_bytecount = index_count + res_count * math.log(3 ^ math.log(#str, 2), 2) / 8
+    local bit_len_disj = math.log(3 ^ math.ceil(math.log(#str, 2)), 2)
+    local compr_bytecount = index_count + res_count * bit_len_disj / 8
     print(string.format(
-        "%d bytes compressable into %.2f bytes (%d symbols; %d disjuncts a %.2f bits)\n",
-        #str, compr_bytecount, res_count, index_count,
-        math.log(3 ^ math.log(#str, 2), 2)))
+        "%d bytes compressable to roughly %.2f bytes (%d symbols; %d disjuncts a %.2f bits)\n",
+        #str, compr_bytecount, index_count, res_count, bit_len_disj))
     return res
 end
